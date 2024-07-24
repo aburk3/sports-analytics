@@ -1,95 +1,110 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+// Page.tsx
+"use client";
 
-export default function Home() {
+import React, { useCallback, useState, useEffect } from "react";
+import { debounce } from "lodash";
+import CircularProgress from "@mui/material/CircularProgress";
+import styles from "./page.module.css";
+import { FilterBar } from "./components/FilterBar/FilterBar";
+import { PropsTable } from "./components/PropsTable/PropsTable";
+import useAlternates from "./hooks/useAlternates";
+import useProps from "./hooks/useProps";
+import useFilteredProps from "./hooks/useFilteredProps";
+import { LoadingContainer } from "./styles";
+
+const API_BASE_URL = "http://localhost";
+
+function Page() {
+  const [manualSuspendedMarkets, setManualSuspendedMarkets] = useState<
+    Set<string>
+  >(new Set());
+  const [positionFilter, setPositionFilter] = useState<string>("");
+  const [statTypeFilter, setStatTypeFilter] = useState<string>("");
+  const [marketStatusFilter, setMarketStatusFilter] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>("");
+
+  const { alternates, alternatesLoading } = useAlternates(API_BASE_URL);
+  const { props, propsLoading } = useProps(API_BASE_URL);
+  const filteredProps = useFilteredProps(
+    props,
+    alternates,
+    positionFilter,
+    statTypeFilter,
+    marketStatusFilter,
+    debouncedSearchTerm,
+    manualSuspendedMarkets
+  );
+
+  const isLoading = alternatesLoading || propsLoading;
+
+  const isManuallySuspended = useCallback(
+    (playerId: number, statTypeId: number) => {
+      return manualSuspendedMarkets.has(`${playerId}-${statTypeId}`);
+    },
+    [manualSuspendedMarkets]
+  );
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(event.target.value);
+  };
+
+  // Debounce effect for search term
+  useEffect(() => {
+    const debouncedSearch = debounce(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+
+    debouncedSearch();
+
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [searchTerm]);
+
+  const handleManualSuspend = (playerId: number, statTypeId: number) => {
+    const marketKey = `${playerId}-${statTypeId}`;
+    setManualSuspendedMarkets((prevState) => {
+      const newSet = new Set(prevState);
+      if (newSet.has(marketKey)) {
+        newSet.delete(marketKey);
+      } else {
+        newSet.add(marketKey);
+      }
+      return newSet;
+    });
+  };
+
   return (
     <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>src/app/page.tsx</code>
-        </p>
-        <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
+      <FilterBar
+        searchTerm={searchTerm}
+        positionFilter={positionFilter}
+        statTypeFilter={statTypeFilter}
+        marketStatusFilter={marketStatusFilter}
+        onSearchChange={handleSearchChange}
+        onPositionFilterChange={(e) => setPositionFilter(e.target.value)}
+        onStatTypeFilterChange={(e) => setStatTypeFilter(e.target.value)}
+        onMarketStatusFilterChange={(e) =>
+          setMarketStatusFilter(e.target.value)
+        }
+      />
+      {isLoading ? (
+        <LoadingContainer>
+          <CircularProgress />
+        </LoadingContainer>
+      ) : filteredProps.length > 0 ? (
+        <PropsTable
+          filteredProps={filteredProps}
+          alternates={alternates}
+          isManuallySuspended={isManuallySuspended}
+          onManualSuspend={handleManualSuspend}
         />
-      </div>
-
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore starter templates for Next.js.</p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+      ) : (
+        <p>No results found</p>
+      )}
     </main>
   );
 }
+
+export default Page;
